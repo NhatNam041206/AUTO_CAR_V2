@@ -4,9 +4,15 @@ import numpy as np
 from ROI import ROI
 from helpers import rotate
 import math
+from static_stop import static_stop_detect, StaticParams
+
+# Scene-idle detection (when to switch to "static" path)
+MOT_IDLE_FRAC  = 0.001   # fraction of ROI pixels considered "no motion"
+IDLE_FRAMES    = 5       # how many consecutive frames → consider stopped
+STATIC_CHECK_EVERY = 1   # run static check each idle frame (keep light)
 
 # ---------- Config (edit these) ----------
-CAM_INDEX = 1              # your camera index (0/1/2...)
+CAM_INDEX = int(input('Camera Source: '))              # your camera index (0/1/2...)
 WIDTH, HEIGHT = 640, 480   # capture size (keep modest for speed)
 ROI_FRACTION = 0.5         # use bottom half of the frame
 EDGE_PAD = 4               # ignore thin border to reduce edge flicker
@@ -23,7 +29,7 @@ roi_helper = ROI(saved_path="roi_points.txt",
                  ROTATE_CW_DEG=0,     # keep same transform in runtime
                  FLIPCODE=1,          # 1: horizontal
                  ANGLE_TRIANGLE=math.radians(60),
-                 W=640, H=480)
+                 W=640, H=480, CAMERA_SOURCE=CAM_INDEX)
 
 # 2) Let the user decide to load or create ROI (your existing UI)
 roi_helper.get_roi()  # runs its own short capture for clicking if needed
@@ -62,7 +68,8 @@ def main():
 
     # Precompute masked pixel count for area%
     roi_pix = max(1, int(np.count_nonzero(roi_mask)))
-
+    idle_count=0
+    
     stop_latch = False
     clear_count = 0
 
@@ -70,49 +77,57 @@ def main():
         ok, frame = cap.read()
         if not ok: break
 
-        # SAME transforms as ROI picker
         frame = rotate(frame, roi_helper.ROTATE_CW_DEG)
         frame = cv.flip(frame, roi_helper.FLIPCODE)
         frame = cv.resize(frame, (roi_helper.W, roi_helper.H))
 
         gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
 
-        # Frame differencing → restrict to polygon ROI
+        # ---- motion path (as before) ----
         diff = cv.absdiff(gray, prev_gray)
         diff = cv.bitwise_and(diff, roi_mask)
-
-        # (Optional) edge pad already applied in build_masks via edge_pad
-
-        # Threshold + morphology
         _, mot = cv.threshold(diff, DIFF_THR, 255, cv.THRESH_BINARY)
         mot = cv.morphologyEx(mot, cv.MORPH_OPEN, kernel, iterations=1)
         mot = cv.morphologyEx(mot, cv.MORPH_CLOSE, kernel, iterations=1)
-
-        # Keep only motion inside your DANGER band (within polygon)
         mot_danger = cv.bitwise_and(mot, danger_mask)
 
-        # Connected components on mot_danger
-        comps = connected_components(mot_danger, MIN_BLOB_AREA)
+        # Motion ratio in ROI
+        mot_ratio = float(np.count_nonzero(mot)) / float(roi_pix)
 
-        bbox, area = (None, 0)
-        if comps:
-            bbox, area = max(comps, key=lambda c: c[1])
+        # Decide whether the scene is "idle" (car stopped / objects static)
+        if mot_ratio < MOT_IDLE_FRAC:
+            idle_count += 1
+        else:
+            idle_count = 0
 
-        # STOP logic (use ROI area for percentage, not full image)
+        use_static = (idle_count >= IDLE_FRAMES)
+
         stop = False
+        bbox = None
+
+        if not use_static:
+            # ------- MOVING CASE: use differencing path -------
+            comps = connected_components(mot_danger, MIN_BLOB_AREA)
+            if comps:
+                bbox, area = max(comps, key=lambda c: c[1])
+                x, y, bw, bh = bbox
+                area_pct = 100.0 * (bw * bh) / roi_pix
+                bottom_pass = (y + bh) > int(mot.shape[0] * STOP_BOTTOM_Y)
+                if area_pct >= STOP_AREA_PCT or bottom_pass:
+                    stop = True
+        else:
+            # ------- IDLE CASE: use YOUR static floor method -------
+            stop, bbox, dbg = static_stop_detect(frame, roi_mask, danger_mask, StaticParams())
+            # (optional) visualize debug:
+            cv.imshow("Nonfloor", dbg["nonfloor"])
+            cv.imshow("NF Danger", dbg["nf_danger"])
+
+        # Draw bbox & STOP
         if bbox is not None:
-            x, y, bw, bh = bbox
-            area_pct = 100.0 * (bw * bh) / roi_pix
-            bottom_pass = (y + bh) > int(mot.shape[0] * STOP_BOTTOM_Y)
-            if area_pct >= STOP_AREA_PCT or bottom_pass:
-                stop = True
+            x,y,bw,bh = bbox
+            cv.rectangle(frame, (x,y), (x+bw,y+bh), (0,255,0), 2)
 
-            # Draw bbox ON THE FRAME (not cropped ROI)
-            cv.rectangle(frame, (x, y), (x + bw, y + bh), (0, 255, 0), 2)
-            cv.putText(frame, f"area%={area_pct:.2f}", (x, max(0, y-6)),
-                       cv.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1)
-
-        # Latch
+        # Latch with hysteresis (unchanged)
         if stop:
             stop_latch = True
             clear_count = 0
@@ -124,15 +139,15 @@ def main():
         if stop_latch:
             cv.putText(frame, "STOP", (10, 24), cv.FONT_HERSHEY_SIMPLEX, 0.8, (0,0,255), 2)
 
-        # Separate windows (no concatenation)
+        # Separate windows
         cv.imshow("Motion(masked ROI)", mot)
         cv.imshow("Danger(masked)", mot_danger)
         cv.imshow("View", frame)
 
         prev_gray = gray
-
         if cv.waitKey(1) & 0xFF == ord('q'):
             break
+
 
     cap.release()
     cv.destroyAllWindows()
