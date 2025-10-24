@@ -4,32 +4,47 @@ import numpy as np
 
 class StaticParams:
     # --- FIXED threshold on LAB L* (floor assumed brighter) ---
-    THR_L = 200             # try 200/210/220 depending on floor brightness
+    THR_L = 200             # ↑ if floor is very bright (try 210/220)
 
-    # --- blob acceptance (shape/size) ---
-    MIN_AREA = 1200         # reject tiny thin stuff
-    MIN_FILL = 0.15         # area / (w*h) must be >= this
-    MIN_THICK = 6           # min(w, h) in pixels
-    ASPECT_MAX = 8.0        # reject extreme aspect ratios (w>8h or h>8w)
+    # --- General blob guards ---
+    MIN_AREA   = 1200       # reject tiny stuff
+    MIN_THICK  = 6          # reject < N px thickness (min(w,h))
+    ASPECT_MAX = 12.0       # hard cap: discard absurdly long boxes (safety)
 
-    # --- global decision threshold ---
+    # --- Line-specific rejection (tile/grout) ---
+    # If a component is very elongated AND very low-fill, treat as a line and reject.
+    LINE_AR_REJECT = 6.0    # elongated if max(w/h, h/w) >= this
+    LINE_FILL_MAX  = 0.22   # and fill (area/(w*h)) <= this  → reject as a line
+
+    # --- Global decision threshold ---
     AREA_PCT = 1.0          # % of ROI pixels to trigger STOP
 
-    # --- morphology cleanup ---
+    # --- Morphology cleanup ---
     MORPH = (3, 3)
 
-def _passes_shape_filters(x, y, w, h, area, p: StaticParams) -> bool:
-    if area < p.MIN_AREA:
+def _shape_metrics(w, h, area):
+    """Return (fill, thickness, elongation) for shape filtering."""
+    box_area = max(1, w * h)
+    fill = area / float(box_area)         # pixels / bbox area
+    thickness = min(w, h)                 # smallest dimension
+    elong = max(w / max(1, h), h / max(1, w))  # ≥1.0; big means long+skinny
+    return fill, thickness, elong
+
+def _passes_shape_filters(w, h, area, p: StaticParams) -> bool:
+    # General guards
+    if area < p.MIN_AREA:         return False
+    if min(w, h) < p.MIN_THICK:   return False
+    fill, thick, elong = _shape_metrics(w, h, area)
+
+    # Hard cap on absurd aspect (failsafe)
+    if elong > p.ASPECT_MAX:
         return False
-    if w * h <= 0:
+
+    # Line rejection: elongated AND very low fill → reject (tile/grout)
+    if (elong >= p.LINE_AR_REJECT) and (fill <= p.LINE_FILL_MAX):
         return False
-    fill = area / float(w * h)
-    if fill < p.MIN_FILL:
-        return False
-    if min(w, h) < p.MIN_THICK:
-        return False
-    if (w > p.ASPECT_MAX * h) or (h > p.ASPECT_MAX * w):
-        return False
+
+    # Otherwise accept
     return True
 
 def static_stop_detect(frame_bgr, roi_mask, danger_mask, params: StaticParams = StaticParams()):
@@ -53,19 +68,19 @@ def static_stop_detect(frame_bgr, roi_mask, danger_mask, params: StaticParams = 
     nonfloor = cv.morphologyEx(nonfloor, cv.MORPH_OPEN, kernel, iterations=1)
     nonfloor = cv.morphologyEx(nonfloor, cv.MORPH_CLOSE, kernel, iterations=1)
 
-    # Only consider the danger band inside the polygon
+    # Consider only the danger band within ROI
     nf_danger = cv.bitwise_and(nonfloor, danger_mask)
 
-    # Connected components + shape filters
+    # Components + shape filtering
     num, lbl, stats, _ = cv.connectedComponentsWithStats(nf_danger, connectivity=8)
     best_bbox, best_area = None, 0
     for i in range(1, num):
         x, y, w2, h2, area = stats[i]
-        if _passes_shape_filters(x, y, w2, h2, area, params):
+        if _passes_shape_filters(w2, h2, area, params):
             if area > best_area:
                 best_bbox, best_area = (x, y, w2, h2), int(area)
 
-    # Area percentage relative to ROI polygon
+    # % of ROI pixels this best component covers (simple, stable)
     roi_pix = max(1, int(np.count_nonzero(roi_mask)))
     area_pct = (100.0 * best_area / roi_pix) if best_area > 0 else 0.0
     stop = area_pct >= params.AREA_PCT
