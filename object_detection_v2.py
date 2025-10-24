@@ -5,6 +5,8 @@ from ROI import ROI
 from helpers import rotate
 import math
 from static_stop import static_stop_detect, StaticParams
+from signal import Car
+
 
 # ---------- Scene-idle detection (when to switch to static path) ----------
 MOT_IDLE_FRAC  = 0.001   # fraction of ROI pixels considered "no motion"
@@ -71,6 +73,8 @@ def main():
 
     stop_latch = False
     clear_count = 0
+    
+    car=Car()
 
     while True:
         ok, frame = cap.read()
@@ -141,7 +145,9 @@ def main():
 
         if stop_latch:
             cv.putText(frame, "STOP", (10, 24), cv.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-
+            car.send_command('mctl 0 0')
+        else:
+            car.send_command('mctl 100 100')
         # Views
         cv.imshow("Motion(masked ROI)", mot)
         cv.imshow("Danger(masked)", mot_danger)
