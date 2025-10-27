@@ -7,19 +7,19 @@ class StaticParams:
     DEBUG = True  # True → print ratios & decisions per component
 
     # --- FIXED threshold on LAB L* (floor assumed brighter) ---
-    THR_L = 200
+    THR_L = 150
 
     # --- General blob guards ---
     MIN_AREA   = 1200
     MIN_THICK  = 6
-    ASPECT_MAX = 12.0
+    ASPECT_MAX = 2.0
 
     # --- Line-specific rejection (tile/grout) ---
-    LINE_AR_REJECT = 6.0
+    LINE_AR_REJECT = 3.0
     LINE_FILL_MAX  = 0.22
 
     # --- Global STOP decision threshold ---
-    AREA_PCT = 1.0
+    AREA_PCT = 2.5 # percentage of detected bbox with ROI_area
 
     # --- Morphology cleanup ---
     MORPH = (3, 3)
@@ -43,7 +43,7 @@ def _passes_shape_filters(w, h, area, p: StaticParams):
         passed, reason = False, "thin"
     elif elong > p.ASPECT_MAX:
         passed, reason = False, "absurd"
-    elif (elong >= p.LINE_AR_REJECT) and (fill <= p.LINE_FILL_MAX):
+    elif (elong >= p.LINE_AR_REJECT) or (fill <= p.LINE_FILL_MAX):
         passed, reason = False, "line"
 
     if p.DEBUG:
@@ -51,7 +51,7 @@ def _passes_shape_filters(w, h, area, p: StaticParams):
         print(f"[Static] area={area:5d} w={w:3d} h={h:3d} "
               f"fill={fill:.3f} elong={elong:.2f} → {reason}")
 
-    return passed
+    return passed,fill,elong
 
 def static_stop_detect(frame_bgr, roi_mask, danger_mask, params: StaticParams = StaticParams()):
     """
@@ -79,12 +79,14 @@ def static_stop_detect(frame_bgr, roi_mask, danger_mask, params: StaticParams = 
 
     # Connected components + shape filtering
     num, lbl, stats, _ = cv.connectedComponentsWithStats(nf_danger, connectivity=8)
-    best_bbox, best_area = None, 0
+    best_bbox, best_area, fill, elong = None, 0, 0, 0
+    params_dbg=None
     for i in range(1, num):
         x, y, w2, h2, area = stats[i]
-        if _passes_shape_filters(w2, h2, area, params):
+        passed,fill,elong=_passes_shape_filters(w2, h2, area, params)
+        if passed:
             if area > best_area:
-                best_bbox, best_area = (x, y, w2, h2), int(area)
+                best_bbox, best_area, params_dbg = (x, y, w2, h2), int(area), (elong, fill)
 
     # Global decision: area% over ROI polygon
     roi_pix = max(1, int(np.count_nonzero(roi_mask)))
@@ -98,5 +100,7 @@ def static_stop_detect(frame_bgr, roi_mask, danger_mask, params: StaticParams = 
         "nonfloor": nonfloor,
         "nf_danger": nf_danger,
         "area_pct": area_pct,
+        "elong" : params_dbg[0] if params_dbg is not None else 0,
+        "fill": params_dbg[1] if params_dbg is not None else 0
     }
     return stop, best_bbox, debug

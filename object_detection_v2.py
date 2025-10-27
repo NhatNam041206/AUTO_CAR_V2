@@ -5,17 +5,17 @@ from ROI import ROI
 from helpers import rotate
 import math
 from static_stop import static_stop_detect, StaticParams
-
+from signal import *
 # ---------------- DEBUG ----------------
 DEBUG_MOTION = True    # True → print motion-component metrics
 SHOW_STATIC_DEBUG = False  # show "Nonfloor" & "NF Danger" windows
-
+WRITE_TO_FILE = True
 # ---------- Scene-idle detection ----------
 MOT_IDLE_FRAC  = 0.001
 IDLE_FRAMES    = 5
 
 # ---------- Config ----------
-CAM_INDEX = int(input('Camera Source (0/1/2): '))
+CAM_INDEX = int(input('Camera Source (0/1/2/video_path): '))
 WIDTH, HEIGHT = 640, 480
 EDGE_PAD = 4
 DIFF_THR = 18
@@ -79,6 +79,15 @@ def connected_components(binmask):
         comps.append(((x, y, w, h), area))
     return comps
 
+def safe_read(cap, flush=0):
+    for _ in range(flush):
+        cap.grab()
+    ok = cap.grab()
+    if not ok:
+        return False, None
+    ok, frame = cap.retrieve()
+    return ok, frame
+
 def main():
     cap = cv.VideoCapture(CAM_INDEX)
     cap.set(cv.CAP_PROP_FRAME_WIDTH, WIDTH)
@@ -107,9 +116,12 @@ def main():
     stop_latch = False
     clear_count = 0
 
+    # car=Car()
+
     while True:
-        ok, frame = cap.read()
-        if not ok: break
+        ok, frame = safe_read(cap, flush=0)  # try 1–2 if tearing persists
+        if not ok:
+            break
 
         frame = rotate(frame, roi_helper.ROTATE_CW_DEG)
         frame = cv.flip(frame, roi_helper.FLIPCODE)
@@ -183,6 +195,8 @@ def main():
         if stop_latch:
             cv.putText(frame, "STOP", (10, 24),
                        cv.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+            # car.send_command('mctl 0 0')
+        # else: car.send_command('mctl 100 100')
 
         cv.imshow("Motion(masked ROI)", mot)
         cv.imshow("Danger(masked)", mot_danger)
@@ -190,6 +204,7 @@ def main():
 
         prev_gray = gray
         if cv.waitKey(1) & 0xFF == ord('q'):
+            # car.send_command('mctl 0 0')
             break
 
     cap.release()
