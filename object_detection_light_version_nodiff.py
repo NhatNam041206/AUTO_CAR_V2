@@ -22,6 +22,9 @@ USE_BLUR   = True
 BLUR_KSIZE = 5
 BLUR_SIGMA = 5
 SAFE_FLUSH = 0
+
+# NEW: how many frames to keep the car stopped after a STOP is triggered
+STOP_HOLD_FRAMES = 15
 # ------------------------------------------------
 
 def safe_read(cap, flush=0):
@@ -40,6 +43,28 @@ def log_message(logfile, msg):
     with open(logfile, "a", encoding="utf-8") as f:
         f.write(f"[{t}] {msg}\n")
 
+# NEW: hold logic helper
+def update_hold_state(hold_active, hold_remaining, detected, hold_frames):
+    """
+    - If not holding and detected=True -> start hold with full count.
+    - If holding:
+        * detected=True  -> reset hold back to full (recount from start)
+        * detected=False -> decrement; if reaches 0, release hold.
+    Returns: (hold_active, hold_remaining)
+    """
+    if not hold_active:
+        if detected:
+            return True, hold_frames
+        return False, 0
+    else:
+        if detected:
+            return True, hold_frames
+        # no detection this frame: count down
+        hold_remaining -= 1
+        if hold_remaining <= 0:
+            return False, 0
+        return True, hold_remaining
+
 def main():
     roi_helper = ROI(
         saved_path="roi_points.txt",
@@ -53,7 +78,8 @@ def main():
         raise SystemExit("[ERR] ROI not set (need 3 points).")
     if len(VIDEO_PATH)>1:
         cap = cv.VideoCapture(VIDEO_PATH)
-    else: cap=cv.VideoCapture(CAM_DEVICE)
+    else:
+        cap = cv.VideoCapture(CAM_DEVICE)
     if not cap.isOpened():
         raise SystemExit(f"[ERR] Could not open {VIDEO_PATH or CAM_DEVICE}")
 
@@ -63,8 +89,6 @@ def main():
     frame0 = rotate(frame0, roi_helper.ROTATE_CW_DEG)
     frame0 = cv.flip(frame0, roi_helper.FLIPCODE)
     frame0 = cv.resize(frame0, (roi_helper.W, roi_helper.H))
-
-
 
     DANGER_YFRAC = 0.85
     EDGE_PAD = 4
@@ -89,6 +113,11 @@ def main():
 
     sp = StaticParams()
     frame_id = 0
+
+    # NEW: hold state
+    hold_active = False
+    hold_remaining = 0
+
     while True:
         ok, frame = safe_read(cap, flush=SAFE_FLUSH)
         if not ok:
@@ -107,6 +136,11 @@ def main():
         stop, bbox, dbg = static_stop_detect(frame, roi_mask, danger_mask, sp)
         elapsed_ms = (time.time() - start_t) * 1000
 
+        # --- Update hold logic based on current detection ---
+        hold_active, hold_remaining = update_hold_state(
+            hold_active, hold_remaining, detected=stop, hold_frames=STOP_HOLD_FRAMES
+        )
+
         # --- Draw overlay ---
         vis = frame.copy()
         bbox_info = "None"
@@ -115,8 +149,10 @@ def main():
             cv.rectangle(vis, (x, y), (x + bw, y + bh), (0, 255, 0), 2)
             bbox_info = f"x={x},y={y},w={bw},h={bh}"
 
-        if stop:
+        # Show STOP only while hold is active
+        if hold_active:
             cv.putText(vis, "STOP", (10, 24), cv.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+            cv.putText(vis, f"hold:{hold_remaining}", (10, 48), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,255), 2)
 
         # --- Prepare masks for combine ---
         nf_color = cv.cvtColor(dbg["nonfloor"], cv.COLOR_GRAY2BGR)
@@ -133,10 +169,10 @@ def main():
             cv.imshow("Combined", combined)
 
         # --- Log debug info ---
-        # Area% is the percentage of the counted detected / ROI region
         log_msg = (
-            f"Frame {frame_id:05d} | STOP={stop} | {bbox_info} | "
-            f"area%={dbg['area_pct']:.2f} | elong={dbg['elong']:.2f} | fill={dbg['fill']:.2f} | elapsed={elapsed_ms:.1f}ms"
+            f"Frame {frame_id:05d} | DETECT={stop} | HOLD={hold_active}({hold_remaining}) | "
+            f"{bbox_info} | area%={dbg['area_pct']:.2f} | elong={dbg['elong']:.2f} | "
+            f"fill={dbg['fill']:.2f} | elapsed={elapsed_ms:.1f}ms"
         )
         log_message(log_file, log_msg)
 
