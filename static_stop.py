@@ -10,9 +10,9 @@ class StaticParams:
     THR_L = 150
 
     # --- General blob guards ---
-    MIN_AREA   = 1200
+    MIN_AREA   = 500
     MIN_THICK  = 6
-    ASPECT_MAX = 2.0
+    ASPECT_MAX = 1.4
 
     # --- Line-specific rejection (tile/grout) ---
     LINE_AR_REJECT = 3.0
@@ -78,7 +78,7 @@ def static_stop_detect(frame_bgr, roi_mask, danger_mask, params: StaticParams = 
     nf_danger = cv.bitwise_and(nonfloor, danger_mask)
 
     # Connected components + shape filtering
-    num, lbl, stats, _ = cv.connectedComponentsWithStats(nf_danger, connectivity=8)
+    num, lbl, stats, _ = cv.connectedComponentsWithStats(nf_danger, connectivity=4)
     best_bbox, best_area, fill, elong = None, 0, 0, 0
     params_dbg=None
     for i in range(1, num):

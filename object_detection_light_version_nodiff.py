@@ -9,8 +9,10 @@ from helpers import rotate
 from static_stop import static_stop_detect, StaticParams
 
 # -------------------- CONFIG --------------------
-CAM_DEVICE = "/dev/video0"    # change if needed
-VIDEO_PATH = r"test\7152851634197.mp4"
+# CAM_DEVICE = "/dev/video0"    # change if needed
+CAM_DEVICE = 0    # change if needed
+# VIDEO_PATH = r"test\7152851634197.mp4"
+VIDEO_PATH=''
 W, H       = 640, 480
 FPS        = 30
 OUT_SCALE  = 0.7
@@ -49,8 +51,9 @@ def main():
     roi_helper.get_roi()
     if not getattr(roi_helper, "corner_points", None) or len(roi_helper.corner_points) != 3:
         raise SystemExit("[ERR] ROI not set (need 3 points).")
-
-    cap = cv.VideoCapture(VIDEO_PATH)
+    if len(VIDEO_PATH)>1:
+        cap = cv.VideoCapture(VIDEO_PATH)
+    else: cap=cv.VideoCapture(CAM_DEVICE)
     if not cap.isOpened():
         raise SystemExit(f"[ERR] Could not open {VIDEO_PATH or CAM_DEVICE}")
 
