@@ -24,7 +24,7 @@ BLUR_SIGMA = 5
 SAFE_FLUSH = 0
 
 # NEW: how many frames to keep the car stopped after a STOP is triggered
-STOP_HOLD_FRAMES = 15
+STOP_HOLD_FRAMES = 20
 # ------------------------------------------------
 
 def safe_read(cap, flush=0):

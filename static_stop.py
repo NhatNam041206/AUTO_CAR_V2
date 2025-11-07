@@ -78,6 +78,22 @@ def static_stop_detect(frame_bgr, roi_mask, danger_mask, params: StaticParams = 
     nf_danger = cv.bitwise_and(nonfloor, danger_mask)
 
     # Connected components + shape filtering
+    roi_pix = max(1, int(np.count_nonzero(roi_mask)))
+    
+    # Checking when the number of unwanted pixels exceed the satisfied ones
+
+    if int(np.count_nonzero(nf_danger))>=int(np.count_nonzero(nf_danger==0)):
+        print('[Static] Detected pixels exceed the maximum area allowed! -> STOP')
+        debug = {
+            "nonfloor": nonfloor,
+            "nf_danger": nf_danger,
+            "area_pct": 0,
+            "elong" : 0,
+            "fill": 0
+        }
+        return True, None, debug
+        
+
     num, lbl, stats, _ = cv.connectedComponentsWithStats(nf_danger, connectivity=4)
     best_bbox, best_area, fill, elong = None, 0, 0, 0
     params_dbg=None
@@ -89,7 +105,6 @@ def static_stop_detect(frame_bgr, roi_mask, danger_mask, params: StaticParams = 
                 best_bbox, best_area, params_dbg = (x, y, w2, h2), int(area), (elong, fill)
 
     # Global decision: area% over ROI polygon
-    roi_pix = max(1, int(np.count_nonzero(roi_mask)))
     area_pct = (100.0 * best_area / roi_pix) if best_area > 0 else 0.0
     stop = area_pct >= params.AREA_PCT
 
