@@ -5,12 +5,13 @@ import os
 import time
 from datetime import datetime
 from ROI import ROI
-from helpers import rotate
+from helpers import rotate,draw_arrow_by_angle
 from static_stop import static_stop_detect, StaticParams
+from calibrate import *
 
 # -------------------- CONFIG --------------------
 # CAM_DEVICE = "/dev/video0"    # change if needed
-CAM_DEVICE = 0    # change if needed
+CAM_DEVICE = 2    # change if needed
 # VIDEO_PATH = r"test\7152851634197.mp4"
 VIDEO_PATH=''
 W, H       = 640, 480
@@ -19,9 +20,11 @@ OUT_SCALE  = 0.7
 
 SHOW_DEBUG_WINDOWS = True
 USE_BLUR   = True
-BLUR_KSIZE = 5
+BLUR_KSIZE = 3
 BLUR_SIGMA = 5
 SAFE_FLUSH = 0
+
+ACCEPTANCE=15
 
 # NEW: how many frames to keep the car stopped after a STOP is triggered
 STOP_HOLD_FRAMES = 20
@@ -90,6 +93,7 @@ def main():
     frame0 = cv.flip(frame0, roi_helper.FLIPCODE)
     frame0 = cv.resize(frame0, (roi_helper.W, roi_helper.H))
 
+    calib=Calibrate()
     DANGER_YFRAC = 0.85
     EDGE_PAD = 4
     roi_mask, danger_mask = roi_helper.build_masks(
@@ -130,8 +134,9 @@ def main():
         frame = cv.resize(frame, (roi_helper.W, roi_helper.H))
 
         if USE_BLUR:
-            frame = cv.GaussianBlur(frame, (BLUR_KSIZE, BLUR_KSIZE), BLUR_SIGMA)
-
+            # Adding more blurring option 
+            # frame = cv.GaussianBlur(frame, (BLUR_KSIZE, BLUR_KSIZE), BLUR_SIGMA)
+            frame = cv.medianBlur(frame, (BLUR_KSIZE))
         start_t = time.time()
         stop, bbox, dbg = static_stop_detect(frame, roi_mask, danger_mask, sp)
         elapsed_ms = (time.time() - start_t) * 1000
@@ -148,12 +153,32 @@ def main():
             x, y, bw, bh = bbox
             cv.rectangle(vis, (x, y), (x + bw, y + bh), (0, 255, 0), 2)
             bbox_info = f"x={x},y={y},w={bw},h={bh}"
-
+        angle_est,cond,angle_log=None, None, None
+        # ----------OBJECT DETECTION-----------#
         # Show STOP only while hold is active
         if hold_active:
             cv.putText(vis, "STOP", (10, 24), cv.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
             cv.putText(vis, f"hold:{hold_remaining}", (10, 48), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,255), 2)
 
+        # ----------ANGLE ESTIMATION-----------#
+        else:
+            angle_est,angle_log=calib.update(frame)
+            if angle_est is not None:
+                
+                if not(np.pi/2-ACCEPTANCE<angle_est and angle_est<ACCEPTANCE+np.pi/2):
+                    if angle_est<np.pi/2:
+                        cond='Left'
+                    elif angle_est>np.pi/2:
+                        cond='Right'
+                    else:
+                        cond='Pass'
+                
+                # --- Draw angle of the detected line ---
+                H_vis=H-10
+                draw_arrow_by_angle(vis,(W//2,H_vis),np.rad2deg(angle_est),100,(255,0,255),5)
+                cv.putText(vis, str(np.rad2deg(angle_est)),(W//2+20,H_vis-5),2,1.0,(255,0,255),2)
+
+        
         # --- Prepare masks for combine ---
         nf_color = cv.cvtColor(dbg["nonfloor"], cv.COLOR_GRAY2BGR)
         nd_color = cv.cvtColor(dbg["nf_danger"], cv.COLOR_GRAY2BGR)
@@ -172,7 +197,8 @@ def main():
         log_msg = (
             f"Frame {frame_id:05d} | DETECT={stop} | HOLD={hold_active}({hold_remaining}) | "
             f"{bbox_info} | area%={dbg['area_pct']:.2f} | elong={dbg['elong']:.2f} | "
-            f"fill={dbg['fill']:.2f} | elapsed={elapsed_ms:.1f}ms"
+            f"fill={dbg['fill']:.2f} | elapsed={elapsed_ms:.1f}ms | "
+            f"angle: {angle_est} | Condition: {cond} | Angle_log: {angle_log}"
         )
         log_message(log_file, log_msg)
 
