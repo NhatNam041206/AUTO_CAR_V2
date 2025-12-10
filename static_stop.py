@@ -4,11 +4,10 @@ import numpy as np
 
 class StaticParams:
     # ---------------- DEBUG ----------------
-    DEBUG = True  # True → print ratios & decisions per component
+    DEBUG = False  # True → print ratios & decisions per component
 
     # --- FIXED threshold on LAB L* (floor assumed brighter) ---
-    THR_L = 150
-
+    THR_L = 135
     # --- General blob guards ---
     MIN_AREA   = 500
     MIN_THICK  = 6

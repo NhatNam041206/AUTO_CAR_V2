@@ -168,9 +168,9 @@ def main():
                 
                 # if not(np.pi/2-ACCEPTANCE<angle_est and angle_est<ACCEPTANCE+np.pi/2):
                 if angle_est<np.pi/2-np.deg2rad(ACCEPTANCE):
-                    cond='Left'
-                elif angle_est>np.pi/2+np.deg2rad(ACCEPTANCE):
                     cond='Right'
+                elif angle_est>np.pi/2+np.deg2rad(ACCEPTANCE):
+                    cond='Left'
                 else:
                     cond='Pass'
                 cv.putText(vis, f"turn: {cond}", (10, 60), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,255), 2)
@@ -179,8 +179,9 @@ def main():
                 H_vis=H-10
                 draw_arrow_by_angle(vis,(W//2,H_vis),np.rad2deg(angle_est),100,(255,0,255),5)
                 cv.putText(vis, str(np.rad2deg(angle_est)),(W//2+20,H_vis-5),2,1.0,(255,0,255),2)
+                if cond!='Pass': print(f'Turn {cond}')
+                else: print('Go straight')
 
-        
         # --- Prepare masks for combine ---
         nf_color = cv.cvtColor(dbg["nonfloor"], cv.COLOR_GRAY2BGR)
         nd_color = cv.cvtColor(dbg["nf_danger"], cv.COLOR_GRAY2BGR)
