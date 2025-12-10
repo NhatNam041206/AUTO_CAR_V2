@@ -18,7 +18,7 @@ W, H       = 640, 480
 FPS        = 30
 OUT_SCALE  = 0.7
 
-SHOW_DEBUG_WINDOWS = True
+SHOW_DEBUG_WINDOWS = False
 USE_BLUR   = True
 BLUR_KSIZE = 3
 BLUR_SIGMA = 5
@@ -177,7 +177,8 @@ def main():
                 
                 # --- Draw angle of the detected line ---
                 H_vis=H-10
-                draw_arrow_by_angle(vis,(W//2,H_vis),np.rad2deg(angle_est),100,(255,0,255),5)
+                if SHOW_DEBUG_WINDOWS:
+                    draw_arrow_by_angle(vis,(W//2,H_vis),np.rad2deg(angle_est),100,(255,0,255),5)
                 cv.putText(vis, str(np.rad2deg(angle_est)),(W//2+20,H_vis-5),2,1.0,(255,0,255),2)
                 if cond!='Pass': print(f'Turn {cond}')
                 else: print('Go straight')
