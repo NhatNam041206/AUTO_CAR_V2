@@ -11,7 +11,7 @@ from calibrate import *
 
 # -------------------- CONFIG --------------------
 # CAM_DEVICE = "/dev/video0"    # change if needed
-CAM_DEVICE = 2    # change if needed
+CAM_DEVICE = 1    # change if needed
 # VIDEO_PATH = r"test\7152851634197.mp4"
 VIDEO_PATH=''
 W, H       = 640, 480
@@ -24,7 +24,7 @@ BLUR_KSIZE = 3
 BLUR_SIGMA = 5
 SAFE_FLUSH = 0
 
-ACCEPTANCE=15
+ACCEPTANCE=5
 
 # NEW: how many frames to keep the car stopped after a STOP is triggered
 STOP_HOLD_FRAMES = 20
@@ -156,6 +156,7 @@ def main():
         angle_est,cond,angle_log=None, None, None
         # ----------OBJECT DETECTION-----------#
         # Show STOP only while hold is active
+        cond=''
         if hold_active:
             cv.putText(vis, "STOP", (10, 24), cv.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
             cv.putText(vis, f"hold:{hold_remaining}", (10, 48), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,255), 2)
@@ -165,13 +166,14 @@ def main():
             angle_est,angle_log=calib.update(frame)
             if angle_est is not None:
                 
-                if not(np.pi/2-ACCEPTANCE<angle_est and angle_est<ACCEPTANCE+np.pi/2):
-                    if angle_est<np.pi/2:
-                        cond='Left'
-                    elif angle_est>np.pi/2:
-                        cond='Right'
-                    else:
-                        cond='Pass'
+                # if not(np.pi/2-ACCEPTANCE<angle_est and angle_est<ACCEPTANCE+np.pi/2):
+                if angle_est<np.pi/2-np.deg2rad(ACCEPTANCE):
+                    cond='Left'
+                elif angle_est>np.pi/2+np.deg2rad(ACCEPTANCE):
+                    cond='Right'
+                else:
+                    cond='Pass'
+                cv.putText(vis, f"turn: {cond}", (10, 60), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,255), 2)
                 
                 # --- Draw angle of the detected line ---
                 H_vis=H-10
@@ -198,7 +200,7 @@ def main():
             f"Frame {frame_id:05d} | DETECT={stop} | HOLD={hold_active}({hold_remaining}) | "
             f"{bbox_info} | area%={dbg['area_pct']:.2f} | elong={dbg['elong']:.2f} | "
             f"fill={dbg['fill']:.2f} | elapsed={elapsed_ms:.1f}ms | "
-            f"angle: {angle_est} | Condition: {cond} | Angle_log: {angle_log}"
+            f"angle: {angle_est} | Angle_log: {angle_log} | Turn: {cond}"
         )
         log_message(log_file, log_msg)
 
