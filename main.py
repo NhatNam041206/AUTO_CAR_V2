@@ -3,6 +3,8 @@ import numpy as np
 import math
 import os
 import time
+import sys
+import threading
 from datetime import datetime
 from ROI import ROI
 from helpers import rotate,draw_arrow_by_angle
@@ -29,6 +31,17 @@ ACCEPTANCE=5
 # NEW: how many frames to keep the car stopped after a STOP is triggered
 STOP_HOLD_FRAMES = 20
 # ------------------------------------------------
+def console_stop_listener(stop_event):
+    """
+    Listen to stdin. If user types 'q' + Enter, set stop_event.
+    Runs in a separate thread.
+    """
+    print("[CTRL] Type 'q' then press Enter to stop the program.")
+    for line in sys.stdin:
+        if line.strip().lower() == 'q':
+            print("[CTRL] Stop requested via console.")
+            stop_event.set()
+            break
 
 def safe_read(cap, flush=0):
     """Grab and retrieve a COMPLETE frame (avoids partial updates)."""
@@ -122,7 +135,22 @@ def main():
     hold_active = False
     hold_remaining = 0
 
+    # NEW: stop-event for headless mode (no window)
+    stop_event = threading.Event()
+    if not SHOW_DEBUG_WINDOWS:
+        listener_thread = threading.Thread(
+            target=console_stop_listener,
+            args=(stop_event,),
+            daemon=True
+        )
+        listener_thread.start()
+
+
     while True:
+        if not SHOW_DEBUG_WINDOWS and stop_event.is_set():
+            print("[INFO] Stop event detected. Exiting loop.")
+            break
+        
         ok, frame = safe_read(cap, flush=SAFE_FLUSH)
         if not ok:
             print("[INFO] End of stream.")
@@ -158,6 +186,7 @@ def main():
         # Show STOP only while hold is active
         cond=''
         if hold_active:
+            print('STOP!')
             cv.putText(vis, "STOP", (10, 24), cv.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
             cv.putText(vis, f"hold:{hold_remaining}", (10, 48), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,255), 2)
 
@@ -196,6 +225,9 @@ def main():
         # --- Display ---
         if SHOW_DEBUG_WINDOWS:
             cv.imshow("Combined", combined)
+            if cv.waitKey(1) & 0xFF == ord('q'):
+                break
+
 
         # --- Log debug info ---
         log_msg = (
@@ -206,8 +238,6 @@ def main():
         )
         log_message(log_file, log_msg)
 
-        if cv.waitKey(1) & 0xFF == ord('q'):
-            break
 
     cap.release()
     writer.release()
