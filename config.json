@@ -1,0 +1,17 @@
+{
+  "CAM_DEVICE": 1,
+  "VIDEO_PATH": "",
+  "W": 640,
+  "H": 480,
+  "FPS": 30,
+  "OUT_SCALE": 0.7,
+
+  "SHOW_DEBUG_WINDOWS": false,
+  "USE_BLUR": true,
+  "BLUR_KSIZE": 3,
+  "BLUR_SIGMA": 5,
+  "SAFE_FLUSH": 0,
+
+  "ACCEPTANCE": 5,
+  "STOP_HOLD_FRAMES": 20
+}

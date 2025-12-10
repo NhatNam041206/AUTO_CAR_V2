@@ -5,32 +5,76 @@ import os
 import time
 import sys
 import threading
+import json
+import pathlib
 from datetime import datetime
 from ROI import ROI
 from helpers import rotate,draw_arrow_by_angle
 from static_stop import static_stop_detect, StaticParams
 from calibrate import *
 
+def load_config(path="config.json"):
+    """
+    Load hyperparameters from config.json.
+    If file or keys are missing, fall back to sane defaults.
+    """
+    # default values (same as your current code)
+    cfg = {
+        "CAM_DEVICE": 1,
+        "VIDEO_PATH": "",
+        "W": 640,
+        "H": 480,
+        "FPS": 30,
+        "OUT_SCALE": 0.7,
+
+        "SHOW_DEBUG_WINDOWS": False,
+        "USE_BLUR": True,
+        "BLUR_KSIZE": 3,
+        "BLUR_SIGMA": 5,
+        "SAFE_FLUSH": 0,
+
+        "ACCEPTANCE": 5,
+        "STOP_HOLD_FRAMES": 20,
+    }
+
+    p = pathlib.Path(path)
+    if not p.exists():
+        print(f"[WARN] {path} not found. Using default config.")
+        return cfg
+
+    try:
+        with p.open("r", encoding="utf-8") as f:
+            user_cfg = json.load(f)
+        if not isinstance(user_cfg, dict):
+            print("[WARN] config.json does not contain a JSON object. Using defaults.")
+            return cfg
+        cfg.update(user_cfg)
+    except Exception as e:
+        print(f"[WARN] Failed to load {path}: {e}. Using defaults.")
+
+    return cfg
+
 # -------------------- CONFIG --------------------
-# CAM_DEVICE = "/dev/video0"    # change if needed
-CAM_DEVICE = 1    # change if needed
-# VIDEO_PATH = r"test\7152851634197.mp4"
-VIDEO_PATH=''
-W, H       = 640, 480
-FPS        = 30
-OUT_SCALE  = 0.7
+_cfg = load_config("config.json")
 
-SHOW_DEBUG_WINDOWS = False
-USE_BLUR   = True
-BLUR_KSIZE = 3
-BLUR_SIGMA = 5
-SAFE_FLUSH = 0
+CAM_DEVICE        = _cfg["CAM_DEVICE"]      # can be index or "/dev/video0"
+VIDEO_PATH        = _cfg["VIDEO_PATH"]
+W                 = _cfg["W"]
+H                 = _cfg["H"]
+FPS               = _cfg["FPS"]
+OUT_SCALE         = _cfg["OUT_SCALE"]
 
-ACCEPTANCE=5
+SHOW_DEBUG_WINDOWS = _cfg["SHOW_DEBUG_WINDOWS"]
+USE_BLUR           = _cfg["USE_BLUR"]
+BLUR_KSIZE         = _cfg["BLUR_KSIZE"]
+BLUR_SIGMA         = _cfg["BLUR_SIGMA"]
+SAFE_FLUSH         = _cfg["SAFE_FLUSH"]
 
-# NEW: how many frames to keep the car stopped after a STOP is triggered
-STOP_HOLD_FRAMES = 20
+ACCEPTANCE         = _cfg["ACCEPTANCE"]
+STOP_HOLD_FRAMES   = _cfg["STOP_HOLD_FRAMES"]
+
 # ------------------------------------------------
+
 def console_stop_listener(stop_event):
     """
     Listen to stdin. If user types 'q' + Enter, set stop_event.
