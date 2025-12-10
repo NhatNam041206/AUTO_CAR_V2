@@ -35,6 +35,7 @@ def load_config(path="config.json"):
 
         "ACCEPTANCE": 5,
         "STOP_HOLD_FRAMES": 20,
+        'DELAY_TIME':0.3
     }
 
     p = pathlib.Path(path)
@@ -72,7 +73,7 @@ SAFE_FLUSH         = _cfg["SAFE_FLUSH"]
 
 ACCEPTANCE         = _cfg["ACCEPTANCE"]
 STOP_HOLD_FRAMES   = _cfg["STOP_HOLD_FRAMES"]
-
+DELAY_TIME         = _cfg['DELAY_TIME']
 # ------------------------------------------------
 
 def console_stop_listener(stop_event):
@@ -281,6 +282,7 @@ def main():
             f"angle: {angle_est} | Angle_log: {angle_log} | Turn: {cond}"
         )
         log_message(log_file, log_msg)
+        time.sleep(DELAY_TIME)
 
 
     cap.release()
